@@ -1,38 +1,61 @@
-package example
+package inference
 
 import (
-	_ "embed"
-	"testing"
-
-	"github.com/stretchr/testify/require"
-	"go.k6.io/k6/js/modulestest"
+	. "github.com/onsi/ginkgo/v2"
+	. "github.com/onsi/gomega"
+	"go.k6.io/k6/js/common"
+	"go.k6.io/k6/js/modules"
+	"go.k6.io/k6/lib"
+	"go.k6.io/k6/metrics"
 )
 
-func Test_module(t *testing.T) { //nolint:tparallel
-	t.Parallel()
+var _ = Describe("Module", func() {
+	var (
+		root *rootModule
+		mv   *mockVU
+	)
 
-	runtime := modulestest.NewRuntime(t)
+	BeforeEach(func() {
+		root = &rootModule{}
+		registry := metrics.NewRegistry()
+		state := &lib.State{
+			BuiltinMetrics: metrics.RegisterBuiltinMetrics(registry),
+		}
+		initEnv := &common.InitEnvironment{
+			TestPreInitState: &lib.TestPreInitState{
+				Registry: registry,
+			},
+		}
+		mv = &mockVU{
+			state: state,
+		}
+		mv.VU = &stubVU{initEnv: initEnv}
+	})
 
-	err := runtime.SetupModuleSystem(map[string]any{importPath: new(rootModule)}, nil, nil)
-	require.NoError(t, err)
+	It("should create a new module instance", func() {
+		instance := root.NewModuleInstance(mv)
+		Expect(instance).NotTo(BeNil())
 
-	_, err = runtime.RunOnEventLoop(`let mod = require("` + importPath + `")`)
-	require.NoError(t, err)
+		m, ok := instance.(*module)
+		Expect(ok).To(BeTrue())
+		Expect(m.metrics.Reqs).NotTo(BeNil())
+		Expect(m.metrics.Duration).NotTo(BeNil())
+	})
 
-	tests := []struct {
-		name  string
-		check string
-	}{
-		{name: "greeting()", check: `mod.greeting("") == "Hello, World!"`},
-		{name: "b32encode()", check: `mod.b32encode("Hello, World!") == "JBSWY3DPFQQFO33SNRSCC==="`},
-		{name: "new Random()", check: `new mod.Random(11).seed == 11`},
-	}
-	for _, tt := range tests { //nolint:paralleltest
-		t.Run(tt.name, func(t *testing.T) {
-			got, err := runtime.RunOnEventLoop(tt.check)
+	It("should connect to inference server", func() {
+		instance := root.NewModuleInstance(mv).(*module)
+		client, err := instance.Connect("http://localhost:8000", "localhost:8001")
+		Expect(err).NotTo(HaveOccurred())
+		Expect(client).NotTo(BeNil())
+		Expect(client.httpURL).To(Equal("http://localhost:8000"))
+	})
+})
 
-			require.NoError(t, err)
-			require.True(t, got.ToBoolean())
-		})
-	}
+type stubVU struct {
+	modules.VU
+	initEnv *common.InitEnvironment
+}
+
+func (s *stubVU) InitEnv() *common.InitEnvironment {
+	return s.initEnv
 }

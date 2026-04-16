@@ -4,3 +4,13 @@ xk6
 xk6.exe
 /build
 coverage.txt
+log.txt
+report.html
+report.json
+.idea/
+.vscode/
+kustomize
+modelmesh-serving-repo/
+node_modules/
+bun.lockb
+.DS_Store

@@ -1,74 +1,80 @@
-# xk6-example
+# xk6-inference
 
-**Example k6 extension**
+k6 extension for performance testing [Inference Servers](https://github.com/triton-inference-server/server) like NVIDIA Triton and KServe.
 
-This k6 extension showcases how to develop a k6 JavaScript extension using simple functions. It serves as the basis for new JavaScript extensions created with the `xk6 new` command. Additionally, this repository functions as a GitHub template for creating k6 extension repositories.
+## Features
 
+- **Auto-Config**: Automatically fetches model configuration (shapes, datatypes) from Triton's `/config` or KServe's metadata endpoint.
+- **Dual Protocol**: Supports both HTTP and gRPC for inference.
+- **Metrics**: Built-in metrics for request count, duration, and data throughput.
+- **Concise API**: Simple and idiomatic JavaScript API.
 
-```javascript file=script.js
-import { greeting } from "k6/x/example";
+## Installation
+
+To build a custom k6 binary with this extension:
+
+```bash
+xk6 build --with github.com/mgorozii/xk6-inference
+```
+
+## Usage
+
+```javascript
+import inference from 'k6/x/inference';
+import { check } from 'k6';
 
 export default function () {
-  console.log(greeting()) // Hello, World!
-  console.log(greeting("Joe")) // Hello, Joe!
+    // Connect to Inference Server (HTTP and gRPC)
+    const client = inference.connect('http://localhost:8000', 'localhost:8001');
+
+    // Load model (automatically fetches config/metadata via HTTP)
+    const model = client.model('simple');
+
+    // Perform inference via HTTP
+    let res = model.http({
+        "INPUT0": [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16],
+        "INPUT1": [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16]
+    });
+    
+    // Perform inference via gRPC
+    res = model.grpc({
+        "INPUT0": [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16],
+        "INPUT1": [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16]
+    });
+
+    check(res, {
+        'success': (r) => r.OUTPUT0 !== undefined
+    });
 }
 ```
 
-## Quick start
+## API
 
-1. **Create a GitHub repository**. This can be done interactively in a browser by clicking [here](https://github.com/new?template_name=xk6-example&template_owner=grafana).
+### `inference.connect(httpUrl, grpcUrl)`
+Creates an inference client.
+- `httpUrl`: Required for fetching configuration and HTTP inference.
+- `grpcUrl`: Required for gRPC inference.
 
-    Alternatively, use the [GitHub CLI](https://cli.github.com/) to create the repository.
+### `client.model(name)`
+Fetches model configuration/metadata and returns a `Model` object.
 
-    ```shell
-   gh repo create -p grafana/xk6-example -d "Experimental k6 extension" --public xk6-quickstart
-    ```
+### `model.http(data)`
+Performs inference using HTTP.
+- `data` (optional): Object where keys are input names and values are data arrays. If omitted, dummy data is generated based on model config.
 
-2. **Create a codespace**. Go to the repository you created in the previous step. Click the green **Code** button and then select **Codespaces** from the dropdown menu. Click **Create new codespace**.
+### `model.grpc(data)`
+Performs inference using gRPC.
+- `data` (optional): Same as `model.http`.
 
-    Alternatively, use the [GitHub CLI](https://cli.github.com/) to create the codespace, replacing `USER` with your GitHub username:
+## Metrics
 
-    ```shell
-    gh codespace create --repo USER/xk6-quickstart --web
-    ```
+The extension emits the following metrics:
 
-    Once the codespace is ready, it will open in your browser as a Visual Studio Code-like environment, letting you begin working on your project with the repository code already checked out.
+- `inference_reqs`: Counter of inference requests.
+- `inference_req_duration`: Trend of request duration.
+- `data_sent`: Built-in k6 metric for total bytes sent.
+- `data_received`: Built-in k6 metric for total bytes received.
 
-3. Run the test script. The repository's root directory includes a `script.js` file. When developing k6 extensions, use the `xk6 run` command instead of `k6 run` to execute your scripts.
+## License
 
-    ```shell
-    xk6 run script.js
-    ```
-
-## Development environment
-
-While using a GitHub codespace in the browser is a good starting point, you can also set up a local development environment for a better developer experience.
-
-To create a local development environment, you need an IDE that supports [Development Containers](https://containers.dev/). [Visual Studio Code](https://code.visualstudio.com/) supports Development Containers after installing the [Dev Containers extension](https://marketplace.visualstudio.com/items?itemName=ms-vscode-remote.remote-containers).
-
-1. First, clone the `xk6-quickstart` repository to your machine and open it in Visual Studio Code. Make sure to replace `USER` with your GitHub username:
-
-   ```shell
-   git clone https://github.com/USER/xk6-quickstart.git
-   code xk6-quickstart
-   ```
-
-2. Visual Studio Code will detect the [development container](https://containers.dev/) configuration and show a pop-up to open the project in a dev container. Accept the prompt and the project opens in the dev container, and the container image is rebuilt if necessary.
-
-3. Run the test script. The repository's root directory includes a `script.js` file. When developing k6 extensions, use the `xk6 run` command instead of `k6 run` to execute your scripts.
-
-    ```shell
-    xk6 run script.js
-    ```
-
-## Download
-
-Building a custom k6 binary with the `xk6-example` extension is necessary for its use. You can download pre-built k6 binaries from the [Releases page](https://github.com/grafana/xk6-example/releases/).
-
-## Build
-
-Use the [xk6](https://github.com/grafana/xk6) tool to build a custom k6 binary with the `xk6-example` extension. Refer to the [xk6 documentation](https://github.com/grafana/xk6) for more information.
-
-## Contribute
-
-If you wish to contribute to this project, please start by reading the [Contributing Guidelines](CONTRIBUTING.md).
+This project is licensed under the GNU Affero General Public License v3.0 - see the [LICENSE](LICENSE) file for details.

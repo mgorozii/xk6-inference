@@ -28,7 +28,7 @@ all: clean format lint security test build it doc readme makefile
 .PHONY: build
 build: 
 	@(\
-		xk6 build --with github.com/grafana/xk6-example=.;\
+		xk6 build --with github.com/mgorozii/xk6-inference=.;\
 	)
 
 # Clean the working directory
