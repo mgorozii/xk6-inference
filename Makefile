@@ -57,6 +57,7 @@ format:
 it: 
 	@(\
 		./k6 run test/smoke.test.js;\
+		go test -v -ginkgo.focus="Integration Report" .;\
 	)
 
 # Run the linter

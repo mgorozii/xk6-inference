@@ -150,10 +150,11 @@ xk6 build --with github.com/mgorozii/xk6-inference=.
 
 ### it - Run the integration tests
 
-Use the custom k6 to run the integration tests defined in `test/smoke.test.js`
+Use the custom k6 to run the integration tests defined in `test/smoke.test.js` and validate the JSON report.
 
 ```bash
 ./k6 run test/smoke.test.js
+go test -v -ginkgo.focus="Integration Report" .
 ```
 
 [it]: #it---run-the-integration-tests
