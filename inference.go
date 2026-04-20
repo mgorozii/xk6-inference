@@ -5,6 +5,7 @@ import (
 	"math/rand"
 	"net/http"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/Trendyol/go-triton-client/base"
@@ -46,24 +47,35 @@ type Model struct {
 	config *modelConfig
 }
 
+type cacheKey struct{ a, b string }
+
+var (
+	configCache = make(map[cacheKey]*modelConfig)
+	configMu    sync.RWMutex
+)
+
 func (c *Client) Model(name string) (*Model, error) {
-	m := &Model{
-		c:    c,
-		name: name,
+	m := &Model{c: c, name: name}
+	if c.httpURL == "" {
+		m.config = &modelConfig{}
+		return m, nil
 	}
 
-	if c.httpURL != "" {
-		provider := &AutoDetectProvider{}
-		config, err := provider.GetModelConfig(http.DefaultClient, c.httpURL, name)
+	k := cacheKey{c.httpURL, name}
+	configMu.RLock()
+	m.config = configCache[k]
+	configMu.RUnlock()
+
+	if m.config == nil {
+		cfg, err := (&AutoDetectProvider{}).GetModelConfig(http.DefaultClient, c.httpURL, name)
 		if err != nil {
 			return nil, fmt.Errorf("failed to fetch model config: %w", err)
 		}
-		m.config = config
-	} else {
-		// If no HTTP URL, we still return the model but it might fail later if config is needed
-		m.config = &modelConfig{}
+		configMu.Lock()
+		configCache[k] = cfg
+		configMu.Unlock()
+		m.config = cfg
 	}
-
 	return m, nil
 }
 

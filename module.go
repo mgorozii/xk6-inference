@@ -6,9 +6,11 @@ import (
 	"os"
 	"strconv"
 	"strings"
+	"sync"
 
 	tgrpc "github.com/Trendyol/go-triton-client/client/grpc"
 	thttp "github.com/Trendyol/go-triton-client/client/http"
+	"github.com/Trendyol/go-triton-client/base"
 	"go.k6.io/k6/js/modules"
 	"go.k6.io/k6/metrics"
 )
@@ -49,42 +51,61 @@ func getEnvInt(key string, def int) int {
 	return def
 }
 
+var (
+	connCache = make(map[cacheKey]*connections)
+	connMu    sync.Mutex
+)
+
+type connections struct {
+	hc base.Client
+	gc base.Client
+}
+
 func (m *module) Connect(httpURL, grpcURL string) (*Client, error) {
-	c := &Client{
+	k := cacheKey{httpURL, grpcURL}
+	connMu.Lock()
+	defer connMu.Unlock()
+
+	conns, ok := connCache[k]
+	if !ok {
+		maxIdleConns := getEnvInt("INFERENCE_MAX_IDLE_CONNS", 100)
+		maxOpenConns := getEnvInt("INFERENCE_MAX_OPEN_CONNS", 500)
+		conns = &connections{}
+
+		if httpURL != "" {
+			cleanHTTP := httpURL
+			ssl := false
+			if strings.HasPrefix(httpURL, "http://") {
+				cleanHTTP = strings.TrimPrefix(httpURL, "http://")
+			} else if strings.HasPrefix(httpURL, "https://") {
+				cleanHTTP = strings.TrimPrefix(httpURL, "https://")
+				ssl = true
+			}
+
+			hc, err := thttp.NewClient(cleanHTTP, false, float64(maxIdleConns), float64(maxOpenConns), ssl, true, nil, nil)
+			if err != nil {
+				return nil, fmt.Errorf("failed to create inference HTTP client: %w", err)
+			}
+			conns.hc = hc
+		}
+
+		if grpcURL != "" {
+			gc, err := tgrpc.NewClient(grpcURL, false, float64(maxIdleConns), float64(maxOpenConns), false, true, nil, log.Default())
+			if err != nil {
+				return nil, fmt.Errorf("failed to create inference gRPC client: %w", err)
+			}
+			conns.gc = gc
+		}
+		connCache[k] = conns
+	}
+
+	return &Client{
 		httpURL: httpURL,
 		vu:      m.vu,
 		metrics: m.metrics,
-	}
-
-	maxIdleConns := getEnvInt("INFERENCE_MAX_IDLE_CONNS", 100)
-	maxOpenConns := getEnvInt("INFERENCE_MAX_OPEN_CONNS", 500)
-
-	if httpURL != "" {
-		cleanHTTP := httpURL
-		ssl := false
-		if strings.HasPrefix(httpURL, "http://") {
-			cleanHTTP = strings.TrimPrefix(httpURL, "http://")
-		} else if strings.HasPrefix(httpURL, "https://") {
-			cleanHTTP = strings.TrimPrefix(httpURL, "https://")
-			ssl = true
-		}
-
-		hc, err := thttp.NewClient(cleanHTTP, false, float64(maxIdleConns), float64(maxOpenConns), ssl, true, nil, nil)
-		if err != nil {
-			return nil, fmt.Errorf("failed to create inference HTTP client: %w", err)
-		}
-		c.hc = hc
-	}
-
-	if grpcURL != "" {
-		gc, err := tgrpc.NewClient(grpcURL, false, float64(maxIdleConns), float64(maxOpenConns), false, true, nil, log.Default())
-		if err != nil {
-			return nil, fmt.Errorf("failed to create inference gRPC client: %w", err)
-		}
-		c.gc = gc
-	}
-
-	return c, nil
+		hc:      conns.hc,
+		gc:      conns.gc,
+	}, nil
 }
 
 var _ modules.Module = (*rootModule)(nil)
