@@ -1,27 +1,93 @@
-// Package example contains the xk6-example extension.
-package example
+package inference
 
-import "go.k6.io/k6/js/modules"
+import (
+	"fmt"
+	"log"
+	"os"
+	"strconv"
+	"strings"
+
+	tgrpc "github.com/Trendyol/go-triton-client/client/grpc"
+	thttp "github.com/Trendyol/go-triton-client/client/http"
+	"github.com/Trendyol/go-triton-client/base"
+	"go.k6.io/k6/js/modules"
+	"go.k6.io/k6/metrics"
+)
 
 type rootModule struct{}
 
 func (*rootModule) NewModuleInstance(vu modules.VU) modules.Instance {
-	return &module{vu}
+	reg := vu.InitEnv().Registry
+	tm := &InferenceMetrics{}
+	tm.Reqs, _ = reg.NewMetric("inference_reqs", metrics.Counter)
+	tm.Duration, _ = reg.NewMetric("inference_req_duration", metrics.Trend, metrics.Time)
+
+	return &module{
+		vu:      vu,
+		metrics: tm,
+	}
 }
 
 type module struct {
-	vu modules.VU
+	vu      modules.VU
+	metrics *InferenceMetrics
 }
 
 func (m *module) Exports() modules.Exports {
 	return modules.Exports{
 		Named: map[string]any{
-			"greeting":  m.greeting,
-			"b32encode": m.b32encode,
-			"b32decode": m.b32decode,
-			"Random":    m.random,
+			"connect": m.Connect,
 		},
 	}
+}
+
+func getEnvInt(key string, def int) int {
+	if val := os.Getenv(key); val != "" {
+		if parsed, err := strconv.Atoi(val); err == nil {
+			return parsed
+		}
+	}
+	return def
+}
+
+func (m *module) Connect(httpURL, grpcURL string) (*Client, error) {
+	maxIdleConns := getEnvInt("INFERENCE_MAX_IDLE_CONNS", 100)
+	maxOpenConns := getEnvInt("INFERENCE_MAX_OPEN_CONNS", 500)
+
+	var hc base.Client
+	if httpURL != "" {
+		cleanHTTP := httpURL
+		ssl := false
+		if strings.HasPrefix(httpURL, "http://") {
+			cleanHTTP = strings.TrimPrefix(httpURL, "http://")
+		} else if strings.HasPrefix(httpURL, "https://") {
+			cleanHTTP = strings.TrimPrefix(httpURL, "https://")
+			ssl = true
+		}
+
+		client, err := thttp.NewClient(cleanHTTP, false, float64(maxIdleConns), float64(maxOpenConns), ssl, true, nil, nil)
+		if err != nil {
+			return nil, fmt.Errorf("failed to create inference HTTP client: %w", err)
+		}
+		hc = client
+	}
+
+	var gc base.Client
+	if grpcURL != "" {
+		client, err := tgrpc.NewClient(grpcURL, false, float64(maxIdleConns), float64(maxOpenConns), false, true, nil, log.Default())
+		if err != nil {
+			return nil, fmt.Errorf("failed to create inference gRPC client: %w", err)
+		}
+		gc = client
+	}
+
+	return &Client{
+		httpURL: httpURL,
+		vu:      m.vu,
+		metrics: m.metrics,
+		hc:      hc,
+		gc:      gc,
+	}, nil
 }
 
 var _ modules.Module = (*rootModule)(nil)

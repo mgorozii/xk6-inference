@@ -1,0 +1,19 @@
+apiVersion: serving.kserve.io/v1beta1
+kind: InferenceService
+metadata:
+  name: triton-model
+  annotations:
+    serving.kserve.io/deploymentMode: ModelMesh
+spec:
+  predictor:
+    model:
+      modelFormat:
+        name: onnx
+      storage:
+        key: localMinIO
+        path: onnx/mnist.onnx
+      # We can't explicitly set the ServingRuntime name here in InferenceService for ModelMesh 
+      # but ModelMesh will choose a suitable one. 
+      # If we want to FORCE Triton, we'd need to check which runtime handles "onnx".
+      # Actually, we can use runtime: triton-2.x if we know it exists.
+      runtime: triton-2.x
